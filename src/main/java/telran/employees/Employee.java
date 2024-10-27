@@ -38,6 +38,11 @@ public class Employee {
     public long getId() {
         return id;
     }
+
+    public int getSalary() {
+        return basicSalary;
+    }
+
     public String getDepartment() {
         return department;
     }
