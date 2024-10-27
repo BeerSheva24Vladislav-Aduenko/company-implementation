@@ -11,6 +11,14 @@ public class WageEmployee extends Employee{
         this.wage = wage;
         this.hours = hours;
     }
+    public int getWage() {
+        return wage;
+    }
+
+    public int getHours() {
+        return hours;
+    }
+
     @Override
     public int computeSalary() {
         return super.computeSalary() + wage * hours;
