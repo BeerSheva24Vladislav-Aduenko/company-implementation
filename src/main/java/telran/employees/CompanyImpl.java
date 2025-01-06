@@ -3,70 +3,94 @@ package telran.employees;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.locks.*;
 
 import telran.io.Persistable;
 
-public class CompanyImpl implements Company, Persistable{
-   private TreeMap<Long, Employee> employees = new TreeMap<>();
-   private HashMap<String, List<Employee>> employeesDepartment = new HashMap<>();
-   private TreeMap<Float, List<Manager>> managersFactor = new TreeMap<>();
-private class CompanyIterator implements Iterator<Employee> {
-    Iterator<Employee> iterator = employees.values().iterator();
-    Employee lastIterated;
-    @Override
-    public boolean hasNext() {
-       return iterator.hasNext();
+public class CompanyImpl implements Company, Persistable {
+
+    private TreeMap<Long, Employee> employees = new TreeMap<>();
+    private HashMap<String, List<Employee>> employeesDepartment = new HashMap<>();
+    private TreeMap<Float, List<Manager>> managersFactor = new TreeMap<>();
+    private ReadWriteLock lock = new ReentrantReadWriteLock();
+    private Lock readLock = lock.readLock();
+    private Lock writeLock = lock.writeLock();
+
+    private class CompanyIterator implements Iterator<Employee> {
+        Iterator<Employee> iterator = employees.values().iterator();
+        Employee lastIterated;
+
+        @Override
+        public boolean hasNext() {
+            return iterator.hasNext();
+        }
+
+        @Override
+        public Employee next() {
+            lastIterated = iterator.next();
+            return lastIterated;
+        }
+
+        @Override
+        public void remove() {
+            iterator.remove();
+            removeFromIndexMaps(lastIterated);
+        }
     }
 
     @Override
-    public Employee next() {
-       lastIterated = iterator.next();
-       return lastIterated;
-    }
-    @Override
-    public void remove() {
-       iterator.remove();
-       removeFromIndexMaps(lastIterated);
-    }
-}
-    @Override
     public Iterator<Employee> iterator() {
-       return new CompanyIterator();
+        return new CompanyIterator();
     }
 
     @Override
     public void addEmployee(Employee empl) {
-        long id = empl.getId();
-        if (employees.putIfAbsent(id, empl) != null) {
-            throw new IllegalStateException("Already exists employee " + id);
+        try {
+            writeLock.lock();
+            long id = empl.getId();
+            if (employees.putIfAbsent(id, empl) != null) {
+                throw new IllegalStateException("Already exists employee " + id);
+            }
+            addIndexMaps(empl);
+        } finally {
+            writeLock.unlock();
         }
-        addIndexMaps(empl);
+
     }
 
     private void addIndexMaps(Employee empl) {
-       employeesDepartment.computeIfAbsent(empl.getDepartment(), k -> new ArrayList<>()).add(empl);
-       if (empl instanceof Manager manager) {
+        employeesDepartment.computeIfAbsent(empl.getDepartment(), k -> new ArrayList<>()).add(empl);
+        if (empl instanceof Manager manager) {
             managersFactor.computeIfAbsent(manager.getFactor(), k -> new ArrayList<>()).add(manager);
-       }
+        }
     }
-
-    
 
     @Override
     public Employee getEmployee(long id) {
-        return employees.get(id);
+        try {
+            readLock.lock();
+            return employees.get(id);
+        } finally {
+            readLock.unlock();
+        }
+
     }
 
     @Override
     public Employee removeEmployee(long id) {
-        Employee empl = employees.remove(id);
-        if(empl == null) {
-            throw new NoSuchElementException("Not found employee " + id);
+        try {
+            writeLock.lock();
+            Employee empl = employees.remove(id);
+            if (empl == null) {
+                throw new NoSuchElementException("Not found employee " + id);
+            }
+            removeFromIndexMaps(empl);
+            return empl;
+        } finally {
+            writeLock.unlock();
         }
-        removeFromIndexMaps(empl);
-        return empl;
-    }
 
+    }
 
     private void removeFromIndexMaps(Employee empl) {
         removeIndexMap(empl.getDepartment(), employeesDepartment, empl);
@@ -85,38 +109,62 @@ private class CompanyIterator implements Iterator<Employee> {
 
     @Override
     public int getDepartmentBudget(String department) {
-        return employeesDepartment.getOrDefault(department, Collections.emptyList())
-        .stream().mapToInt(Employee::computeSalary).sum();
+        try {
+            readLock.lock();
+            return employeesDepartment.getOrDefault(department, Collections.emptyList())
+                    .stream().mapToInt(Employee::computeSalary).sum();
+        } finally {
+            readLock.unlock();
+        }
+
     }
 
     @Override
     public String[] getDepartments() {
-        return employeesDepartment.keySet().stream().sorted().toArray(String[]::new);
+        try {
+            readLock.lock();
+            return employeesDepartment.keySet().stream().sorted().toArray(String[]::new);
+        } finally {
+            readLock.unlock();
+        }
+
     }
 
     @Override
     public Manager[] getManagersWithMostFactor() {
-        Manager [] res = new Manager[0];
-        if (!managersFactor.isEmpty()) {
-            res = managersFactor.lastEntry().getValue().toArray(res);
+        try {
+            readLock.lock();
+            Manager[] res = new Manager[0];
+            if (!managersFactor.isEmpty()) {
+                res = managersFactor.lastEntry().getValue().toArray(res);
+            }
+            return res;
+        } finally {
+            readLock.unlock();
         }
-        return res;
+
     }
 
     @Override
     public void saveToFile(String fileName) {
-        try (PrintWriter writer = new PrintWriter(fileName)) {
-            forEach(writer::println);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        try {
+            readLock.lock();
+            try (PrintWriter writer = new PrintWriter(fileName)) {
+                forEach(writer::println);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        } finally {
+            readLock.unlock();
         }
+
     }
 
     @Override
     public void restoreFromFile(String fileName) {
         try (BufferedReader reader = Files.newBufferedReader(Path.of(fileName))) {
             reader.lines().map(Employee::getEmployeeFromJSON).forEach(this::addEmployee);
-        } catch (FileNotFoundException e) { 
+        } catch (NoSuchFileException e) {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

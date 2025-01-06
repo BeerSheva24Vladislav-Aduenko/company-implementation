@@ -22,6 +22,10 @@ public class Employee {
            throw new RuntimeException(e);
         }
     }
+    
+    public int getBasicSalary() {
+        return basicSalary;
+    }
    protected void setObject(JSONObject jsonObj) {
        id = jsonObj.getLong("id");
        basicSalary = jsonObj.getInt("basicSalary");
@@ -38,11 +42,6 @@ public class Employee {
     public long getId() {
         return id;
     }
-
-    public int getSalary() {
-        return basicSalary;
-    }
-
     public String getDepartment() {
         return department;
     }
