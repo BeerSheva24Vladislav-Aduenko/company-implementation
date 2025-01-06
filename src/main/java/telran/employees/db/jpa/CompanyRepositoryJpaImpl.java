@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import jakarta.persistence.spi.PersistenceProvider;
 import jakarta.persistence.spi.PersistenceUnitInfo;
 import telran.employees.Employee;
+import telran.employees.Manager;
 import telran.employees.db.CompanyRepository;
 
 public class CompanyRepositoryJpaImpl implements CompanyRepository {
@@ -97,6 +98,16 @@ public class CompanyRepositoryJpaImpl implements CompanyRepository {
     public List<String> findDepartments() {
         TypedQuery<String> query = em.createQuery("select distinct department from EmployeeEntity", String.class);
         return query.getResultList();
+    }
+
+    @Override
+    public List<Manager> findManagersWithMaxFactor() {
+        TypedQuery<ManagerEntity> query =
+         em.createQuery("select mng from ManagerEntity mng where factor = (select max(factor) from ManagerEntity )",
+          ManagerEntity.class);
+                List<ManagerEntity> managers = query.getResultList();
+        return managers.stream().map(EmployeesMapper::toEmployeeDtoFromEntity)
+        .map(e -> (Manager)e).toList();
     }
 
 }
